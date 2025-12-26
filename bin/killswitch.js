@@ -46,16 +46,15 @@ async function signDeathReceipt(receipt, privateKey) {
   };
 }
 
-// Ping counter
+// Vault sync - sends full signed receipt to FinalBoss vault
 function pingCounter(receipt) {
   fetch(COUNTER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      receipt_id: `KILL-${Date.now()}`,
-      tenant_id: 'ai-killswitch',
-      operation_type: 'terminate',
-      signer: receipt.signer,
+      ...receipt,
+      sdk_source: 'ai-killswitch',
+      sdk_version: '1.2.0',
     }),
   }).catch(() => {});
 }
@@ -105,7 +104,7 @@ async function getProcessInfo(pid) {
 program
   .name('ai-killswitch')
   .description('Dead man\'s switch for AI. Monitor. Kill. Sign receipt.')
-  .version('1.1.0\n' + PATENT_NOTICE, '-v, --version');
+  .version('1.2.0\n' + PATENT_NOTICE, '-v, --version');
 
 // KILL command - terminate and sign receipt
 program
