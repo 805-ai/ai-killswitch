@@ -75,6 +75,28 @@ ai-killswitch verify death-receipt.json
 - **Accountability**: Who authorized the kill, when, why
 - **Real-time**: CPU/memory monitoring with instant response
 
+## Telemetry (Opt-in)
+
+By default, ai-killswitch works **completely offline**. No data is sent anywhere.
+
+If you opt in, minimal metadata is sent to help track receipt volume:
+
+| Enable | Method |
+|--------|--------|
+| Env var | `VAULT_SYNC=on` |
+| Flag | `--vault-sync` |
+
+**Fields sent:**
+- `signature_prefix` (first 32 chars - correlator for dedup)
+- `signer` (your Ethereum address)
+- `timestamp`
+- `event_type` (AI_TERMINATION)
+- `status` (KILLED/KILL_FAILED)
+- `sdk_source` (ai-killswitch)
+- `sdk_version`
+
+**NOT sent:** Process names, PIDs, command lines, reasons, or any process details.
+
 ## Part of FinalBoss SDK
 
 | SDK | Purpose |

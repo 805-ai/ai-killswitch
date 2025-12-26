@@ -47,22 +47,23 @@ async function signDeathReceipt(receipt, privateKey) {
 }
 
 // Vault sync - opt-in telemetry
-// Only sends if VAULT_SYNC=on env var
-// Sends: receipt_id, signer, timestamp, event_type, status (NO process command details)
+// Only sends if VAULT_SYNC=on env var or --vault-sync flag
+// Sends: signature (correlator), signer, timestamp, event_type, status (NO process details)
 function pingCounter(receipt, enabled = false) {
   if (!enabled) return;
 
+  const sig = receipt.signature || '';
   fetch(COUNTER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      receipt_id: `KILL-${Date.now()}`,
+      signature_prefix: sig ? sig.slice(0, 32) : undefined, // Correlator for dedup
       signer: receipt.signer,
       timestamp: receipt.timestamp,
       event_type: receipt.type,
       status: receipt.status,
       sdk_source: 'ai-killswitch',
-      sdk_version: '1.2.1',
+      sdk_version: '1.2.2',
     }),
   }).catch(() => {});
 }
@@ -112,7 +113,12 @@ async function getProcessInfo(pid) {
 program
   .name('ai-killswitch')
   .description('Dead man\'s switch for AI. Monitor. Kill. Sign receipt.')
-  .version('1.2.1\n' + PATENT_NOTICE, '-v, --version');
+  .version('1.2.2\n' + PATENT_NOTICE, '-v, --version');
+
+// Helper: check if vault sync is enabled
+function isVaultEnabled(opts) {
+  return opts.vaultSync || process.env.VAULT_SYNC === 'on';
+}
 
 // KILL command - terminate and sign receipt
 program
@@ -121,6 +127,7 @@ program
   .option('-r, --reason <reason>', 'Reason for termination', 'manual kill')
   .option('-k, --key <key>', 'Private key (or use KILLSWITCH_KEY env)')
   .option('-o, --out <file>', 'Output receipt file', 'death-receipt.json')
+  .option('--vault-sync', 'Opt-in: send metadata to FinalBoss counter')
   .action(async (pid, opts) => {
     const key = opts.key || process.env.KILLSWITCH_KEY || process.env.RECEIPT_KEY;
 
@@ -158,7 +165,7 @@ program
     console.log(`[KILLSWITCH] Signer: ${signedReceipt.signer}`);
 
     // Ping counter
-    pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
+    pingCounter(signedReceipt, isVaultEnabled(opts));
   });
 
 // WATCH command - monitor a process
@@ -169,6 +176,7 @@ program
   .option('--memory <mb>', 'Kill if memory exceeds this MB', '8000')
   .option('--timeout <seconds>', 'Kill after this many seconds', '3600')
   .option('-k, --key <key>', 'Private key for signing')
+  .option('--vault-sync', 'Opt-in: send metadata to FinalBoss counter')
   .action(async (pid, opts) => {
     const key = opts.key || process.env.KILLSWITCH_KEY || process.env.RECEIPT_KEY;
     const targetPid = parseInt(pid);
@@ -194,7 +202,7 @@ program
         const signedReceipt = await signDeathReceipt(receipt, key);
         fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
         console.log('[KILLSWITCH] Death receipt signed: death-receipt.json');
-        pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
+        pingCounter(signedReceipt, isVaultEnabled(opts));
       } else {
         await killProcess(targetPid);
       }
@@ -260,6 +268,7 @@ program
   .option('--timeout <seconds>', 'Kill after this many seconds', '3600')
   .option('-k, --key <key>', 'Private key for signing')
   .option('-r, --reason <reason>', 'Reason if killed', 'wrapped execution')
+  .option('--vault-sync', 'Opt-in: send metadata to FinalBoss counter')
   .action(async (command, opts) => {
     const key = opts.key || process.env.KILLSWITCH_KEY || process.env.RECEIPT_KEY;
     const cmd = command.join(' ');
@@ -284,7 +293,7 @@ program
         const signedReceipt = await signDeathReceipt(receipt, key);
         fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
         console.log('[KILLSWITCH] Death receipt signed: death-receipt.json');
-        pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
+        pingCounter(signedReceipt, isVaultEnabled(opts));
       } else {
         child.kill('SIGKILL');
       }

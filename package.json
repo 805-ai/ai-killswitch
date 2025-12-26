@@ -1,6 +1,6 @@
 {
   "name": "ai-killswitch",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Dead man's switch for AI. Monitor. Kill. Sign receipt.",
   "bin": {
     "ai-killswitch": "./bin/killswitch.js",
