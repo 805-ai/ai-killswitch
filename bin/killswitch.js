@@ -13,6 +13,7 @@ const { ethers } = require('ethers');
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const pidusage = require('pidusage');
 
 const PATENT_NOTICE = 'Patent Pending: US 63/926,683 | finalbosstech.com';
 const COUNTER_URL = 'https://receipts.finalbosstech.com/receipt';
@@ -104,7 +105,7 @@ async function getProcessInfo(pid) {
 program
   .name('ai-killswitch')
   .description('Dead man\'s switch for AI. Monitor. Kill. Sign receipt.')
-  .version('1.0.0\n' + PATENT_NOTICE, '-v, --version');
+  .version('1.1.0\n' + PATENT_NOTICE, '-v, --version');
 
 // KILL command - terminate and sign receipt
 program
@@ -163,41 +164,82 @@ program
   .option('-k, --key <key>', 'Private key for signing')
   .action(async (pid, opts) => {
     const key = opts.key || process.env.KILLSWITCH_KEY || process.env.RECEIPT_KEY;
+    const targetPid = parseInt(pid);
+    const cpuLimit = parseFloat(opts.cpu);
+    const memoryLimitMB = parseFloat(opts.memory);
+    const memoryLimitBytes = memoryLimitMB * 1024 * 1024;
 
     console.log(`[KILLSWITCH] Watching PID ${pid}...`);
-    console.log(`  CPU limit: ${opts.cpu}%`);
-    console.log(`  Memory limit: ${opts.memory}MB`);
+    console.log(`  CPU limit: ${cpuLimit}%`);
+    console.log(`  Memory limit: ${memoryLimitMB}MB`);
     console.log(`  Timeout: ${opts.timeout}s`);
 
     const startTime = Date.now();
     const timeout = parseInt(opts.timeout) * 1000;
+
+    async function terminateWithReceipt(reason) {
+      if (key) {
+        const processInfo = await getProcessInfo(targetPid);
+        const wallet = new ethers.Wallet(key);
+        const receipt = createDeathReceipt(processInfo, reason, wallet.address);
+        await killProcess(targetPid);
+        receipt.status = 'KILLED';
+        const signedReceipt = await signDeathReceipt(receipt, key);
+        fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
+        console.log('[KILLSWITCH] Death receipt signed: death-receipt.json');
+        pingCounter(signedReceipt);
+      } else {
+        await killProcess(targetPid);
+      }
+      process.exit(0);
+    }
 
     const interval = setInterval(async () => {
       // Check timeout
       if (Date.now() - startTime > timeout) {
         console.log('[KILLSWITCH] Timeout exceeded. Terminating...');
         clearInterval(interval);
-
-        if (key) {
-          const processInfo = await getProcessInfo(parseInt(pid));
-          const receipt = createDeathReceipt(processInfo, 'timeout', 'system');
-          await killProcess(parseInt(pid));
-          receipt.status = 'KILLED';
-          const signedReceipt = await signDeathReceipt(receipt, key);
-          fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
-          console.log('[KILLSWITCH] Death receipt signed.');
-          pingCounter(signedReceipt);
-        } else {
-          await killProcess(parseInt(pid));
-        }
-        process.exit(0);
+        await terminateWithReceipt('timeout exceeded');
+        return;
       }
 
       // Check if process still exists
       try {
-        process.kill(parseInt(pid), 0);
+        process.kill(targetPid, 0);
       } catch (e) {
         console.log('[KILLSWITCH] Process ended naturally.');
+        clearInterval(interval);
+        process.exit(0);
+        return;
+      }
+
+      // Check CPU and memory usage
+      try {
+        const stats = await pidusage(targetPid);
+        const cpuPercent = stats.cpu.toFixed(1);
+        const memoryMB = (stats.memory / 1024 / 1024).toFixed(1);
+
+        // Log current stats
+        process.stdout.write(`\r[KILLSWITCH] CPU: ${cpuPercent}% | Memory: ${memoryMB}MB    `);
+
+        // Check CPU limit
+        if (stats.cpu > cpuLimit) {
+          console.log(`\n[KILLSWITCH] CPU ${cpuPercent}% exceeded limit ${cpuLimit}%. Terminating...`);
+          clearInterval(interval);
+          await terminateWithReceipt(`CPU exceeded ${cpuLimit}% (was ${cpuPercent}%)`);
+          return;
+        }
+
+        // Check memory limit
+        if (stats.memory > memoryLimitBytes) {
+          console.log(`\n[KILLSWITCH] Memory ${memoryMB}MB exceeded limit ${memoryLimitMB}MB. Terminating...`);
+          clearInterval(interval);
+          await terminateWithReceipt(`Memory exceeded ${memoryLimitMB}MB (was ${memoryMB}MB)`);
+          return;
+        }
+      } catch (err) {
+        // Process might have ended
+        console.log('\n[KILLSWITCH] Process ended or inaccessible.');
         clearInterval(interval);
         process.exit(0);
       }

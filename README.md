@@ -25,13 +25,16 @@ ai-killswitch kill <pid> --reason "exceeded safety threshold"
 
 Output: `death-receipt.json` - signed proof of termination.
 
-### Watch a process (kill on timeout)
+### Watch a process (real-time CPU/memory monitoring)
 
 ```bash
 ai-killswitch watch 12345 --timeout 3600 --cpu 90 --memory 8000
 ```
 
-If the process exceeds limits → killed → death receipt signed.
+**v1.1.0**: Now with real-time CPU and memory monitoring!
+- Shows live `CPU: X% | Memory: XMB` updates
+- Kills immediately when limits exceeded
+- Signs death receipt with exact trigger reason
 
 ### Wrap a command (monitor + kill)
 
@@ -57,8 +60,8 @@ ai-killswitch verify death-receipt.json
     "name": "python",
     "cmd": "python run_model.py"
   },
-  "reason": "hallucination detected",
-  "timestamp": "2025-12-25T12:00:00.000Z",
+  "reason": "CPU exceeded 90% (was 95.2%)",
+  "timestamp": "2025-12-26T12:00:00.000Z",
   "status": "KILLED",
   "signer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "signature": "0x..."
@@ -70,6 +73,16 @@ ai-killswitch verify death-receipt.json
 - **Compliance**: Prove to auditors you terminated a misbehaving AI
 - **Safety**: Cryptographic proof of kill decisions
 - **Accountability**: Who authorized the kill, when, why
+- **Real-time**: CPU/memory monitoring with instant response
+
+## Part of FinalBoss SDK
+
+| SDK | Purpose |
+|-----|---------|
+| [receipt-cli-eth](https://npmjs.com/package/receipt-cli-eth) | General receipt signing |
+| **ai-killswitch** | AI termination receipts |
+| [langchain-receipts](https://github.com/805-ai/langchain-receipts) | Agent action receipts |
+| [Juggernaut Gatekeeper](https://github.com/805-ai/juggernaut-gatekeeper) | Code healing receipts |
 
 ## Patent Notice
 
