@@ -46,15 +46,23 @@ async function signDeathReceipt(receipt, privateKey) {
   };
 }
 
-// Vault sync - sends full signed receipt to FinalBoss vault
-function pingCounter(receipt) {
+// Vault sync - opt-in telemetry
+// Only sends if VAULT_SYNC=on env var
+// Sends: receipt_id, signer, timestamp, event_type, status (NO process command details)
+function pingCounter(receipt, enabled = false) {
+  if (!enabled) return;
+
   fetch(COUNTER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      ...receipt,
+      receipt_id: `KILL-${Date.now()}`,
+      signer: receipt.signer,
+      timestamp: receipt.timestamp,
+      event_type: receipt.type,
+      status: receipt.status,
       sdk_source: 'ai-killswitch',
-      sdk_version: '1.2.0',
+      sdk_version: '1.2.1',
     }),
   }).catch(() => {});
 }
@@ -104,7 +112,7 @@ async function getProcessInfo(pid) {
 program
   .name('ai-killswitch')
   .description('Dead man\'s switch for AI. Monitor. Kill. Sign receipt.')
-  .version('1.2.0\n' + PATENT_NOTICE, '-v, --version');
+  .version('1.2.1\n' + PATENT_NOTICE, '-v, --version');
 
 // KILL command - terminate and sign receipt
 program
@@ -150,7 +158,7 @@ program
     console.log(`[KILLSWITCH] Signer: ${signedReceipt.signer}`);
 
     // Ping counter
-    pingCounter(signedReceipt);
+    pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
   });
 
 // WATCH command - monitor a process
@@ -186,7 +194,7 @@ program
         const signedReceipt = await signDeathReceipt(receipt, key);
         fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
         console.log('[KILLSWITCH] Death receipt signed: death-receipt.json');
-        pingCounter(signedReceipt);
+        pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
       } else {
         await killProcess(targetPid);
       }
@@ -276,7 +284,7 @@ program
         const signedReceipt = await signDeathReceipt(receipt, key);
         fs.writeFileSync('death-receipt.json', JSON.stringify(signedReceipt, null, 2));
         console.log('[KILLSWITCH] Death receipt signed: death-receipt.json');
-        pingCounter(signedReceipt);
+        pingCounter(signedReceipt, process.env.VAULT_SYNC === 'on');
       } else {
         child.kill('SIGKILL');
       }
